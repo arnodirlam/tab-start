@@ -7,6 +7,7 @@ It helps you quickly insert:
 - aliases
 - directories in the current working directory
 - files in the current working directory
+- history entries
 
 On a non-empty prompt, `TAB` keeps normal completion behavior.
 
@@ -57,6 +58,7 @@ Then add `tab-start` in `plugins=(...)` and reload your shell.
 Selection insertion behavior:
 - `command` and `alias`: inserted as-is with trailing space.
 - `file` and `directory`: shell-escaped by default.
+- `history`: inserted as-is.
 
 ## Configuration
 
@@ -71,6 +73,7 @@ Set variables before `source $ZSH/oh-my-zsh.sh` in `~/.zshrc`.
 | `TAB_START_INCLUDE_ALIASES` | `1` | Include alias entries. |
 | `TAB_START_INCLUDE_DIRECTORIES` | `1` | Include cwd directories. |
 | `TAB_START_INCLUDE_FILES` | `1` | Include cwd files. |
+| `TAB_START_INCLUDE_HISTORY` | `1` | Include history entries. |
 | `TAB_START_ESCAPE_PATHS` | `1` | Escape inserted file/directory values with `${(q)...}`. |
 
 Example:
@@ -78,12 +81,13 @@ Example:
 ```zsh
 TAB_START_BINDKEY='^I'
 TAB_START_PROMPT='start> '
-TAB_START_HEADER=$'TAB on empty prompt: pick alias/command/path\nEsc cancels, Enter inserts'
+TAB_START_HEADER=$'TAB on empty prompt: pick command/alias/path/history\nEsc cancels, Enter inserts'
 TAB_START_INCLUDE_COMMANDS=1
 TAB_START_INCLUDE_ALIASES=1
 TAB_START_INCLUDE_DIRECTORIES=1
 TAB_START_INCLUDE_FILES=1
 TAB_START_ESCAPE_PATHS=1
+TAB_START_INCLUDE_HISTORY=1
 ```
 
 ## Keybinding notes
