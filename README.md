@@ -115,18 +115,17 @@ bindkey '^I' _tab_start_insert
   - confirm plugin is in `plugins=(...)`.
   - run `bindkey '^I'` and check it maps to `_tab_start_insert`.
 
-## Performance notes
+## Benchmarks
 
-Sample benchmark (2026-04-18, zsh 5.9, Darwin 25.4.0, 2213 commands, 2 aliases, 8 dirs, 7 files, 30 runs):
-
-| Case | Phase | Avg (ms) | Min (ms) | P95 (ms) | Max (ms) |
-| --- | --- | ---:| ---:| ---:| ---:|
-| all (commands + aliases + dirs + files) | build | 94.459 | 91.356 | 100.026 | 104.390 |
-| all (commands + aliases + dirs + files) | fzf filter | 8.113 | 7.759 | 8.421 | 8.431 |
-| commands + aliases | build | 92.687 | 89.946 | 96.877 | 97.049 |
-| dirs + files | build | 1.044 | 0.763 | 2.240 | 5.143 |
-
-Most latency comes from command enumeration.
+<!-- benchmark:start -->
+```text
+2026-04-18, zsh 5.9, Darwin 25.4.0, 2141 commands, 598 aliases, 13 dirs, 6 files, 3310 history entries (997 unique), 30 runs, 95th percentile
+277 ms	commands + aliases + dirs + files + history
+146 ms	commands + aliases + dirs + files
+32 ms	aliases + dirs + files
+6 ms	dirs + files
+```
+<!-- benchmark:end -->
 
 ## Development
 
@@ -134,7 +133,8 @@ This repo includes a [Justfile](./Justfile) and pinned tools in [`.tool-versions
 `zsh` is used as a system dependency locally and installed explicitly in CI.
 
 - `just check`: runs syntax and behavior checks.
-- `just benchmark`: runs local benchmark cases (defaults to 30 runs).
+- `just benchmark [dir] [runs]`: runs local benchmark cases in `dir` (defaults: `.` and `30`).
+- `just update-readme-benchmark [dir] [runs]`: refreshes the README benchmark block from `just benchmark` output.
 
 ## License
 
