@@ -57,7 +57,7 @@ Then add `tab-start` in `plugins=(...)` and reload your shell.
 
 Selection insertion behavior:
 - `command` and `alias`: inserted as-is with trailing space.
-- `script` and `dir`: shell-escaped by default.
+- `script` and `dir`: shell-escaped by default; `dir` appends a trailing `/`.
 - `history`: inserted as-is.
 
 ## Configuration

@@ -9,7 +9,7 @@
 #   TAB_START_INCLUDE_DIRECTORIES=1    # 1 or 0
 #   TAB_START_FILES_MAX_DEPTH=2        # file recursion depth (0 disables file entries)
 #   TAB_START_INCLUDE_HISTORY=1        # 1 or 0
-#   TAB_START_ESCAPE_PATHS=1           # 1 or 0 (script/directory insertion)
+#   TAB_START_ESCAPE_PATHS=1           # 1 or 0 (script/dir insertion)
 : "${TAB_START_BINDKEY:=^I}"
 : "${TAB_START_PROMPT:=tab> }"
 : "${TAB_START_HEADER:=$'TAB on empty prompt: pick command/alias/path/history entry\nEsc cancels, Enter inserts'}"
@@ -209,7 +209,7 @@ _tab_start_insert() {
 
   if __tab_start_is_enabled "$TAB_START_INCLUDE_DIRECTORIES"; then
     for dir_name in *(N-/); do
-      __tab_start_add_row "directory" "$dir_name" "$dir_name"
+      __tab_start_add_row "dir" "$dir_name" "$dir_name"
     done
   fi
 
@@ -275,7 +275,10 @@ _tab_start_insert() {
   fi
 
   payload="${insert_by_id[$picked_id]}"
-  if [[ "$picked_kind" == "script" || "$picked_kind" == "directory" ]] && __tab_start_is_enabled "$TAB_START_ESCAPE_PATHS"; then
+  if [[ "$picked_kind" == "dir" ]] && [[ "$payload" != */ ]]; then
+    payload+="/"
+  fi
+  if [[ "$picked_kind" == "script" || "$picked_kind" == "dir" ]] && __tab_start_is_enabled "$TAB_START_ESCAPE_PATHS"; then
     LBUFFER+="${(q)payload}"
   else
     LBUFFER+="$payload"

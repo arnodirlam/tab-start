@@ -9,6 +9,7 @@ check:
     env ZDOTDIR=/tmp zsh -f scripts/tests/03-no-sources-fallback.zsh
     env ZDOTDIR=/tmp zsh -f scripts/tests/04-history-selection.zsh
     env ZDOTDIR=/tmp zsh -f scripts/tests/05-executable-files-depth.zsh
+    env ZDOTDIR=/tmp zsh -f scripts/tests/06-directory-trailing-slash.zsh
 
 benchmark dir='' runs='30':
     benchmark_dir='{{dir}}'; \
