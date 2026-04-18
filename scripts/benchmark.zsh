@@ -93,13 +93,47 @@ count_history_entries() {
   HISTORY_UNIQUE_COUNT="$history_unique"
 }
 
-typeset -i commands_count aliases_count dirs_count files_count history_total_count history_unique_count
+count_total_files_within_depth() {
+  local max_depth="$1"
+  local file_name file_pattern
+  local -a all_files unique_files
+  local -i depth_level
+  local -i depth_segments
+
+  all_files=()
+  if (( max_depth <= 0 )); then
+    REPLY="0"
+    return
+  fi
+
+  for (( depth_level = 1; depth_level <= max_depth; depth_level += 1 )); do
+    file_pattern=""
+    for (( depth_segments = 1; depth_segments < depth_level; depth_segments += 1 )); do
+      file_pattern+="*/"
+    done
+    file_pattern+="*(N-.)"
+    for file_name in ${~file_pattern}; do
+      all_files+=("$file_name")
+    done
+  done
+
+  unique_files=("${(@ou)all_files}")
+  REPLY="${#unique_files[@]}"
+}
+
+typeset -i commands_count aliases_count dirs_count files_count total_files_count history_total_count history_unique_count files_max_depth
 typeset -a directory_entries file_entries
 load_directory_history
 commands_count=${#${(k)commands}}
 aliases_count=${#${(k)aliases}}
 directory_entries=(*(N-/))
-file_entries=(*(N-.))
+__tab_start_resolve_files_max_depth
+files_max_depth="$REPLY"
+TAB_START_FILES_MAX_DEPTH="$files_max_depth"
+__tab_start_collect_executable_files "$files_max_depth"
+file_entries=("${TAB_START_EXECUTABLE_FILES[@]}")
+count_total_files_within_depth "$files_max_depth"
+total_files_count="$REPLY"
 dirs_count=${#directory_entries[@]}
 files_count=${#file_entries[@]}
 count_history_entries
@@ -111,8 +145,7 @@ print_benchmark_case() {
   local include_commands="$2"
   local include_aliases="$3"
   local include_directories="$4"
-  local include_files="$5"
-  local include_history="$6"
+  local include_history="$5"
   local -a samples
   local -a sorted
   local start end elapsed p95
@@ -122,7 +155,6 @@ print_benchmark_case() {
   TAB_START_INCLUDE_COMMANDS="$include_commands"
   TAB_START_INCLUDE_ALIASES="$include_aliases"
   TAB_START_INCLUDE_DIRECTORIES="$include_directories"
-  TAB_START_INCLUDE_FILES="$include_files"
   TAB_START_INCLUDE_HISTORY="$include_history"
 
   samples=()
@@ -149,8 +181,8 @@ print_benchmark_case() {
   printf '%.0f ms\t%s\n' "$p95" "$label"
 }
 
-print -r -- "$(date +%F), zsh ${ZSH_VERSION}, $(uname -s) $(uname -r), ${commands_count} commands, ${aliases_count} aliases, ${dirs_count} dirs, ${files_count} files, ${history_total_count} history entries (${history_unique_count} unique), ${runs} runs, 95th percentile"
-print_benchmark_case "commands + aliases + dirs + files + history" 1 1 1 1 1
-print_benchmark_case "commands + aliases + dirs + files" 1 1 1 1 0
-print_benchmark_case "aliases + dirs + files" 0 1 1 1 0
-print_benchmark_case "dirs + files" 0 0 1 1 0
+print -r -- "$(date +%F), zsh ${ZSH_VERSION}, $(uname -s) $(uname -r), ${commands_count} commands, ${aliases_count} aliases, ${dirs_count} dirs, ${total_files_count} files (${files_count} executable, depth ${files_max_depth}), ${history_total_count} history entries (${history_unique_count} unique), ${runs} runs, 95th percentile"
+print_benchmark_case "commands + aliases + dirs + executable files + history" 1 1 1 1
+print_benchmark_case "commands + aliases + dirs + executable files" 1 1 1 0
+print_benchmark_case "aliases + dirs + executable files" 0 1 1 0
+print_benchmark_case "dirs + executable files" 0 0 1 0

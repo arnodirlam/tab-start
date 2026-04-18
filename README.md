@@ -6,7 +6,7 @@ It helps you quickly insert:
 - commands
 - aliases
 - directories in the current working directory
-- files in the current working directory
+- executable files under the current working directory (recursive, configurable depth)
 - history entries
 
 On a non-empty prompt, `TAB` keeps normal completion behavior.
@@ -57,7 +57,7 @@ Then add `tab-start` in `plugins=(...)` and reload your shell.
 
 Selection insertion behavior:
 - `command` and `alias`: inserted as-is with trailing space.
-- `file` and `directory`: shell-escaped by default.
+- `script` and `dir`: shell-escaped by default.
 - `history`: inserted as-is.
 
 ## Configuration
@@ -72,9 +72,9 @@ Set variables before `source $ZSH/oh-my-zsh.sh` in `~/.zshrc`.
 | `TAB_START_INCLUDE_COMMANDS` | `1` | Include command entries. |
 | `TAB_START_INCLUDE_ALIASES` | `1` | Include alias entries. |
 | `TAB_START_INCLUDE_DIRECTORIES` | `1` | Include cwd directories. |
-| `TAB_START_INCLUDE_FILES` | `1` | Include cwd files. |
+| `TAB_START_FILES_MAX_DEPTH` | `2` | Max executable file recursion depth. Set to `0` to disable file entries. |
 | `TAB_START_INCLUDE_HISTORY` | `1` | Include history entries. |
-| `TAB_START_ESCAPE_PATHS` | `1` | Escape inserted file/directory values with `${(q)...}`. |
+| `TAB_START_ESCAPE_PATHS` | `1` | Escape inserted script/dir values with `${(q)...}`. |
 
 Example:
 
@@ -85,7 +85,7 @@ TAB_START_HEADER=$'TAB on empty prompt: pick command/alias/path/history\nEsc can
 TAB_START_INCLUDE_COMMANDS=1
 TAB_START_INCLUDE_ALIASES=1
 TAB_START_INCLUDE_DIRECTORIES=1
-TAB_START_INCLUDE_FILES=1
+TAB_START_FILES_MAX_DEPTH=2
 TAB_START_ESCAPE_PATHS=1
 TAB_START_INCLUDE_HISTORY=1
 ```
@@ -119,11 +119,11 @@ bindkey '^I' _tab_start_insert
 
 <!-- benchmark:start -->
 ```text
-2026-04-18, zsh 5.9, Darwin 25.4.0, 2141 commands, 598 aliases, 13 dirs, 6 files, 3310 history entries (997 unique), 30 runs, 95th percentile
-277 ms	commands + aliases + dirs + files + history
-146 ms	commands + aliases + dirs + files
-32 ms	aliases + dirs + files
-6 ms	dirs + files
+2026-04-18, zsh 5.9, Darwin 25.4.0, 2141 commands, 598 aliases, 13 dirs, 360 files (7 executable, depth 2), 3334 history entries (1007 unique), 30 runs, 95th percentile
+285 ms	commands + aliases + dirs + executable files + history
+145 ms	commands + aliases + dirs + executable files
+36 ms	aliases + dirs + executable files
+10 ms	dirs + executable files
 ```
 <!-- benchmark:end -->
 

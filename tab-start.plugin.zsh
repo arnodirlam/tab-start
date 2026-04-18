@@ -7,22 +7,23 @@
 #   TAB_START_INCLUDE_COMMANDS=1       # 1 or 0
 #   TAB_START_INCLUDE_ALIASES=1        # 1 or 0
 #   TAB_START_INCLUDE_DIRECTORIES=1    # 1 or 0
-#   TAB_START_INCLUDE_FILES=1          # 1 or 0
+#   TAB_START_FILES_MAX_DEPTH=2        # file recursion depth (0 disables file entries)
 #   TAB_START_INCLUDE_HISTORY=1        # 1 or 0
-#   TAB_START_ESCAPE_PATHS=1           # 1 or 0 (file/directory insertion)
+#   TAB_START_ESCAPE_PATHS=1           # 1 or 0 (script/directory insertion)
 : "${TAB_START_BINDKEY:=^I}"
 : "${TAB_START_PROMPT:=tab> }"
 : "${TAB_START_HEADER:=$'TAB on empty prompt: pick command/alias/path/history entry\nEsc cancels, Enter inserts'}"
 : "${TAB_START_INCLUDE_COMMANDS:=1}"
 : "${TAB_START_INCLUDE_ALIASES:=1}"
 : "${TAB_START_INCLUDE_DIRECTORIES:=1}"
-: "${TAB_START_INCLUDE_FILES:=1}"
+: "${TAB_START_FILES_MAX_DEPTH:=2}"
 : "${TAB_START_INCLUDE_HISTORY:=1}"
 : "${TAB_START_ESCAPE_PATHS:=1}"
 
 TAB_START_SGR_RESET=$'\x1b[0m'
 TAB_START_SGR_BOLD=$'\x1b[1m'
 typeset -g TAB_START_FALLBACK_WIDGET="expand-or-complete"
+typeset -ga TAB_START_EXECUTABLE_FILES=()
 
 __tab_start_is_enabled() {
   [[ "${1:-1}" != "0" ]]
@@ -111,6 +112,44 @@ __tab_start_resolve_header() {
   REPLY="${(g::)header}"
 }
 
+__tab_start_resolve_files_max_depth() {
+  local configured_depth="${TAB_START_FILES_MAX_DEPTH:-2}"
+  if [[ "$configured_depth" != <-> ]]; then
+    REPLY="2"
+    return
+  fi
+  REPLY="$configured_depth"
+}
+
+__tab_start_collect_executable_files() {
+  local max_depth="$1"
+  local file_name file_pattern
+  local -a executable_files
+  local -i depth_level
+  local -i depth_segments
+
+  executable_files=()
+  if (( max_depth <= 0 )); then
+    TAB_START_EXECUTABLE_FILES=()
+    return
+  fi
+
+  for (( depth_level = 1; depth_level <= max_depth; depth_level += 1 )); do
+    file_pattern=""
+    for (( depth_segments = 1; depth_segments < depth_level; depth_segments += 1 )); do
+      file_pattern+="*/"
+    done
+    file_pattern+="*(N-.)"
+    for file_name in ${~file_pattern}; do
+      if [[ -x "$file_name" ]]; then
+        executable_files+=("$file_name")
+      fi
+    done
+  done
+
+  TAB_START_EXECUTABLE_FILES=("${(@ou)executable_files}")
+}
+
 # Relies on dynamic scope for `row_id`, `rows`, `types_by_id`, and `insert_by_id`.
 __tab_start_add_row() {
   local kind="$1"
@@ -141,7 +180,9 @@ _tab_start_insert() {
   local history_line history_command history_lines
   local selection picked_kind picked_id payload entry_text header_text
   local rows
+  local -a file_entries
   local -i row_id=0
+  local -i files_max_depth=0
   local -A types_by_id
   local -A insert_by_id
   local -A seen_history_entries
@@ -172,11 +213,13 @@ _tab_start_insert() {
     done
   fi
 
-  if __tab_start_is_enabled "$TAB_START_INCLUDE_FILES"; then
-    for file_name in *(N-.); do
-      __tab_start_add_row "file" "$file_name" "$file_name"
-    done
-  fi
+  __tab_start_resolve_files_max_depth
+  files_max_depth="$REPLY"
+  __tab_start_collect_executable_files "$files_max_depth"
+  file_entries=("${TAB_START_EXECUTABLE_FILES[@]}")
+  for file_name in "${file_entries[@]}"; do
+    __tab_start_add_row "script" "$file_name" "$file_name"
+  done
 
   if __tab_start_is_enabled "$TAB_START_INCLUDE_HISTORY"; then
     if history_lines="$(fc -rl 1 2>/dev/null)"; then
@@ -232,7 +275,7 @@ _tab_start_insert() {
   fi
 
   payload="${insert_by_id[$picked_id]}"
-  if [[ "$picked_kind" == "file" || "$picked_kind" == "directory" ]] && __tab_start_is_enabled "$TAB_START_ESCAPE_PATHS"; then
+  if [[ "$picked_kind" == "script" || "$picked_kind" == "directory" ]] && __tab_start_is_enabled "$TAB_START_ESCAPE_PATHS"; then
     LBUFFER+="${(q)payload}"
   else
     LBUFFER+="$payload"
