@@ -20,6 +20,7 @@
 
 TAB_START_SGR_RESET=$'\x1b[0m'
 TAB_START_SGR_BOLD=$'\x1b[1m'
+typeset -g TAB_START_FALLBACK_WIDGET="expand-or-complete"
 
 __tab_start_is_enabled() {
   [[ "${1:-1}" != "0" ]]
@@ -39,6 +40,38 @@ __tab_start_bold_name_entry() {
   else
     REPLY="${TAB_START_SGR_BOLD}${name}${TAB_START_SGR_RESET} -> ${detail}"
   fi
+}
+
+__tab_start_bound_widget_for_key() {
+  local key="$1"
+  local binding
+  local -a words
+
+  REPLY=""
+  binding="$(bindkey "$key" 2>/dev/null)" || return
+  words=(${(z)binding})
+  if (( ${#words[@]} < 2 )); then
+    return
+  fi
+  REPLY="${(Q)words[2]}"
+  if [[ "$REPLY" == "undefined-key" || "$REPLY" == "_tab_start_insert" ]]; then
+    REPLY=""
+    return
+  fi
+  if (( ${+widgets} )) && (( ! ${+widgets[$REPLY]} )); then
+    REPLY=""
+  fi
+}
+
+__tab_start_dispatch_fallback() {
+  local widget="${TAB_START_FALLBACK_WIDGET:-expand-or-complete}"
+  if [[ "$widget" == "_tab_start_insert" ]]; then
+    widget="expand-or-complete"
+  fi
+  if (( ${+widgets} )) && (( ! ${+widgets[$widget]} )); then
+    widget="expand-or-complete"
+  fi
+  zle "$widget"
 }
 
 # Normalize header so both "line1\nline2" and "$'line1\nline2'" are supported.
@@ -67,12 +100,12 @@ __tab_start_add_row() {
 
 _tab_start_insert() {
   if [[ -n ${BUFFER//[[:space:]]/} ]]; then
-    zle expand-or-complete
+    __tab_start_dispatch_fallback
     return
   fi
 
   if ! (( $+commands[fzf] )); then
-    zle expand-or-complete
+    __tab_start_dispatch_fallback
     return
   fi
 
@@ -113,6 +146,11 @@ _tab_start_insert() {
     for file_name in *(N-.); do
       __tab_start_add_row "file" "$file_name" "$file_name"
     done
+  fi
+
+  if (( row_id == 0 )); then
+    __tab_start_dispatch_fallback
+    return
   fi
 
   __tab_start_resolve_header
@@ -158,5 +196,9 @@ _tab_start_insert() {
 
 zle -N _tab_start_insert
 if [[ -n "$TAB_START_BINDKEY" && "$TAB_START_BINDKEY" != "none" ]]; then
+  __tab_start_bound_widget_for_key "$TAB_START_BINDKEY"
+  if [[ -n "$REPLY" ]]; then
+    TAB_START_FALLBACK_WIDGET="$REPLY"
+  fi
   bindkey "$TAB_START_BINDKEY" _tab_start_insert
 fi

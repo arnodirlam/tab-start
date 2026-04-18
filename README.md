@@ -51,8 +51,8 @@ Then add `tab-start` in `plugins=(...)` and reload your shell.
 ## Behavior
 
 - Empty prompt + `TAB`: opens `fzf` picker.
-- Non-empty prompt + `TAB`: runs `expand-or-complete`.
-- If `fzf` is missing: falls back to `expand-or-complete`.
+- Non-empty prompt + `TAB`: runs the widget that was previously bound to `TAB`.
+- If `fzf` is missing: falls back to the widget that was previously bound to `TAB`.
 
 Selection insertion behavior:
 - `command` and `alias`: inserted as-is with trailing space.
@@ -123,6 +123,14 @@ Sample benchmark (2026-04-18, zsh 5.9, Darwin 25.4.0, 2213 commands, 2 aliases, 
 | dirs + files | build | 1.044 | 0.763 | 2.240 | 5.143 |
 
 Most latency comes from command enumeration.
+
+## Development
+
+This repo includes a [Justfile](./Justfile) and pinned tools in [`.tool-versions`](./.tool-versions).
+`zsh` is used as a system dependency locally and installed explicitly in CI.
+
+- `just check`: runs syntax and behavior checks.
+- `just benchmark`: runs local benchmark cases (defaults to 30 runs).
 
 ## License
 
