@@ -1,18 +1,13 @@
 # TAB on empty prompt: fuzzy-pick command/alias/path/history entry and insert.
+# based on fzf-tab for rendering, navigation, selection, and insertion.
 #
 # Optional config vars (set before `source $ZSH/oh-my-zsh.sh`):
-#   TAB_START_BINDKEY='^I'            # set "none" to skip automatic bindkey
-#   TAB_START_PROMPT='tab> '
-#   TAB_START_HEADER=$'TAB on empty prompt: pick alias/command/path/history entry\nEsc cancels, Enter inserts'
 #   TAB_START_INCLUDE_COMMANDS=1       # 1 or 0
 #   TAB_START_INCLUDE_ALIASES=1        # 1 or 0
 #   TAB_START_INCLUDE_DIRECTORIES=1    # 1 or 0
-#   TAB_START_FILES_MAX_DEPTH=2        # file recursion depth (0 disables file entries)
+#   TAB_START_FILES_MAX_DEPTH=2        # executable-file recursion depth (0 disables)
 #   TAB_START_INCLUDE_HISTORY=1        # 1 or 0
 #   TAB_START_ESCAPE_PATHS=1           # 1 or 0 (script/dir insertion)
-: "${TAB_START_BINDKEY:=^I}"
-: "${TAB_START_PROMPT:=tab> }"
-: "${TAB_START_HEADER:=$'TAB on empty prompt: pick command/alias/path/history entry\nEsc cancels, Enter inserts'}"
 : "${TAB_START_INCLUDE_COMMANDS:=1}"
 : "${TAB_START_INCLUDE_ALIASES:=1}"
 : "${TAB_START_INCLUDE_DIRECTORIES:=1}"
@@ -20,10 +15,12 @@
 : "${TAB_START_INCLUDE_HISTORY:=1}"
 : "${TAB_START_ESCAPE_PATHS:=1}"
 
-TAB_START_SGR_RESET=$'\x1b[0m'
-TAB_START_SGR_BOLD=$'\x1b[1m'
-typeset -g TAB_START_FALLBACK_WIDGET="expand-or-complete"
+zmodload zsh/parameter 2>/dev/null || true
+zmodload zsh/stat 2>/dev/null || true
+
 typeset -ga TAB_START_EXECUTABLE_FILES=()
+typeset -ga TAB_START_HISTORY_ENTRIES=()
+typeset -g TAB_START_ORIGINAL_COMMAND_COMPLETER="${TAB_START_ORIGINAL_COMMAND_COMPLETER:-}"
 
 __tab_start_is_enabled() {
   [[ "${1:-1}" != "0" ]]
@@ -31,89 +28,76 @@ __tab_start_is_enabled() {
 
 __tab_start_sanitize_display() {
   REPLY="$1"
-  REPLY="${REPLY//$'\t'/\\t}"
-  REPLY="${REPLY//$'\n'/\\n}"
+  REPLY="${REPLY//\\/\\\\}"
+  REPLY="${REPLY//\^/\\^}"
+  REPLY="${(V)REPLY}"
 }
 
-__tab_start_bold_name_entry() {
+__tab_start_name_entry() {
   local name="$1"
   local detail="$2"
+
   if [[ -z "$detail" ]]; then
-    REPLY="${TAB_START_SGR_BOLD}${name}${TAB_START_SGR_RESET}"
+    REPLY="$name"
   else
-    REPLY="${TAB_START_SGR_BOLD}${name}${TAB_START_SGR_RESET} -> ${detail}"
+    REPLY="${name} -> ${detail}"
   fi
 }
 
-__tab_start_parse_history_entry() {
-  local line="$1"
-  local trimmed event_number
+# Prefix descriptions so fzf-tab can distinguish identical text across groups.
+__tab_start_group_display() {
+  local group="$1"
+  local entry="$2"
 
-  trimmed="${line#"${line%%[![:space:]]*}"}"
-  event_number="${trimmed%%[^0-9]*}"
-  if [[ -z "$event_number" ]]; then
+  __tab_start_sanitize_display "$entry"
+  REPLY="${group}  ${REPLY}"
+}
+
+__tab_start_path_display() {
+  local path="$1"
+  local suffix="$2"
+  local -a path_stat
+
+  REPLY="${path}${suffix}"
+  if [[ -L "$path" ]] && (( $+builtins[zstat] )) &&
+      zstat -A path_stat -L -- "$path" 2>/dev/null && [[ -n "${path_stat[14]:-}" ]]; then
+    REPLY+=" -> ${path_stat[14]}"
+  fi
+}
+
+__tab_start_candidate_is_supported() {
+  # fzf-tab line-frames captures and reserves NUL/STX inside each record.
+  [[ "$1" != *$'\n'* && "$1" != *$'\0'* && "$1" != *$'\2'* ]]
+}
+
+__tab_start_collect_history_entries() {
+  local history_event history_command
+  local -a history_entries
+  local -A seen_history_entries
+
+  TAB_START_HISTORY_ENTRIES=()
+  if (( ! ${+history} )); then
     return 1
   fi
 
-  trimmed="${trimmed#$event_number}"
-  while [[ "$trimmed" == \** ]]; do
-    trimmed="${trimmed#\*}"
+  for history_event in ${(Onk)history}; do
+    history_command="${history[$history_event]}"
+    if [[ -z "$history_command" ]] || ! __tab_start_candidate_is_supported "$history_command"; then
+      continue
+    fi
+    if [[ -n ${seen_history_entries[$history_command]+x} ]]; then
+      continue
+    fi
+    seen_history_entries[$history_command]=1
+    history_entries+=("$history_command")
   done
-  if [[ "$trimmed" != [[:space:]]* ]]; then
-    return 1
-  fi
 
-  trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
-  if [[ -z "$trimmed" ]]; then
-    return 1
-  fi
-
-  REPLY="$trimmed"
-}
-
-__tab_start_bound_widget_for_key() {
-  local key="$1"
-  local binding
-  local -a words
-
-  REPLY=""
-  binding="$(bindkey "$key" 2>/dev/null)" || return
-  words=(${(z)binding})
-  if (( ${#words[@]} < 2 )); then
-    return
-  fi
-  REPLY="${(Q)words[2]}"
-  if [[ "$REPLY" == "undefined-key" || "$REPLY" == "_tab_start_insert" ]]; then
-    REPLY=""
-    return
-  fi
-  if (( ${+widgets} )) && (( ! ${+widgets[$REPLY]} )); then
-    REPLY=""
-  fi
-}
-
-__tab_start_dispatch_fallback() {
-  local widget="${TAB_START_FALLBACK_WIDGET:-expand-or-complete}"
-  if [[ "$widget" == "_tab_start_insert" ]]; then
-    widget="expand-or-complete"
-  fi
-  if (( ${+widgets} )) && (( ! ${+widgets[$widget]} )); then
-    widget="expand-or-complete"
-  fi
-  zle "$widget"
-}
-
-# Normalize header so both "line1\nline2" and "$'line1\nline2'" are supported.
-__tab_start_resolve_header() {
-  local header="$TAB_START_HEADER"
-  if (( ${#header} >= 3 )) && [[ "${header[1,2]}" == "\$'" && "${header[-1]}" == "'" ]]; then
-    header="${header[3,-2]}"
-  fi
-  REPLY="${(g::)header}"
+  TAB_START_HISTORY_ENTRIES=("${history_entries[@]}")
 }
 
 __tab_start_resolve_files_max_depth() {
   local configured_depth="${TAB_START_FILES_MAX_DEPTH:-2}"
+
   if [[ "$configured_depth" != <-> ]]; then
     REPLY="2"
     return
@@ -150,147 +134,153 @@ __tab_start_collect_executable_files() {
   TAB_START_EXECUTABLE_FILES=("${(@ou)executable_files}")
 }
 
-# Relies on dynamic scope for `row_id`, `rows`, `types_by_id`, and `insert_by_id`.
-__tab_start_add_row() {
-  local kind="$1"
-  local entry="$2"
-  local insert_payload="$3"
-  local sanitized_entry
+__tab_start_complete_previous_command() {
+  local completer="${TAB_START_ORIGINAL_COMMAND_COMPLETER:-_autocd}"
 
-  __tab_start_sanitize_display "$entry"
-  sanitized_entry="$REPLY"
-  (( row_id += 1 ))
-  types_by_id[$row_id]="$kind"
-  insert_by_id[$row_id]="$insert_payload"
-  rows+="${kind}"$'\t'"${sanitized_entry}"$'\t'"${row_id}"$'\n'
+  if [[ -z "$completer" || "$completer" == "_tab_start_complete" ]]; then
+    completer="_autocd"
+  fi
+
+  # Match Zsh's `_normal`, whose command-position mapping may contain arguments.
+  eval "$completer"
 }
 
-_tab_start_insert() {
-  if [[ -n ${BUFFER//[[:space:]]/} ]]; then
-    __tab_start_dispatch_fallback
-    return
+_tab_start_complete() {
+  setopt localoptions extendedglob
+
+  if (( CURRENT != 1 )) || [[ -n ${BUFFER//[[:space:]]/} ]]; then
+    __tab_start_complete_previous_command
+    return $?
   fi
 
-  if ! (( $+commands[fzf] )); then
-    __tab_start_dispatch_fallback
-    return
-  fi
-
-  local alias_name alias_value cmd_name cmd_path cmd_display dir_name file_name
-  local history_line history_command history_lines
-  local selection picked_kind picked_id payload entry_text header_text
-  local rows
-  local -a file_entries
-  local -i row_id=0
+  local original_curcontext="${curcontext:-}"
+  local curcontext="${original_curcontext%:*}:tab-start"
+  local alias_name alias_value cmd_name cmd_path cmd_detail dir_name file_name
+  local history_command entry_text
+  local -a command_values command_displays
+  local -a alias_values alias_displays
+  local -a directory_values directory_displays
+  local -a script_values script_displays
+  local -a history_values history_displays
+  local -a TAB_START_HISTORY_ENTRIES
+  local -a path_quote_options
   local -i files_max_depth=0
-  local -A types_by_id
-  local -A insert_by_id
-  local -A seen_history_entries
-  rows=$'category\tentry\tid\n'
+  local -i result=1
 
   if __tab_start_is_enabled "$TAB_START_INCLUDE_COMMANDS"; then
     for cmd_name in ${(ou)${(k)commands}}; do
+      if ! __tab_start_candidate_is_supported "$cmd_name"; then
+        continue
+      fi
       cmd_path="${commands[$cmd_name]}"
-      cmd_display="${cmd_path/#$HOME\//~\/}"
-      __tab_start_bold_name_entry "$cmd_name" "$cmd_display"
+      cmd_detail="${cmd_path/#$HOME\//~\/}"
+      __tab_start_name_entry "$cmd_name" "$cmd_detail"
       entry_text="$REPLY"
-      __tab_start_add_row "command" "$entry_text" "$cmd_name "
+      __tab_start_group_display "command" "$entry_text"
+      command_values+=("$cmd_name")
+      command_displays+=("$REPLY")
     done
   fi
 
   if __tab_start_is_enabled "$TAB_START_INCLUDE_ALIASES"; then
     for alias_name in ${(ok)aliases}; do
+      if ! __tab_start_candidate_is_supported "$alias_name"; then
+        continue
+      fi
       alias_value="${aliases[$alias_name]}"
-      __tab_start_bold_name_entry "$alias_name" "$alias_value"
+      __tab_start_name_entry "$alias_name" "$alias_value"
       entry_text="$REPLY"
-      __tab_start_add_row "alias" "$entry_text" "$alias_name "
+      __tab_start_group_display "alias" "$entry_text"
+      alias_values+=("$alias_name")
+      alias_displays+=("$REPLY")
     done
   fi
 
   if __tab_start_is_enabled "$TAB_START_INCLUDE_DIRECTORIES"; then
     for dir_name in *(N-/); do
-      __tab_start_add_row "dir" "$dir_name" "$dir_name"
+      if ! __tab_start_candidate_is_supported "$dir_name"; then
+        continue
+      fi
+      __tab_start_path_display "$dir_name" "/"
+      entry_text="$REPLY"
+      __tab_start_group_display "dir" "$entry_text"
+      directory_values+=("$dir_name")
+      directory_displays+=("$REPLY")
     done
   fi
 
   __tab_start_resolve_files_max_depth
   files_max_depth="$REPLY"
   __tab_start_collect_executable_files "$files_max_depth"
-  file_entries=("${TAB_START_EXECUTABLE_FILES[@]}")
-  for file_name in "${file_entries[@]}"; do
-    __tab_start_add_row "script" "$file_name" "$file_name"
+  for file_name in "${TAB_START_EXECUTABLE_FILES[@]}"; do
+    if ! __tab_start_candidate_is_supported "$file_name"; then
+      continue
+    fi
+    __tab_start_path_display "$file_name" ""
+    entry_text="$REPLY"
+    __tab_start_group_display "script" "$entry_text"
+    script_values+=("$file_name")
+    script_displays+=("$REPLY")
   done
 
   if __tab_start_is_enabled "$TAB_START_INCLUDE_HISTORY"; then
-    if history_lines="$(fc -rl 1 2>/dev/null)"; then
-      for history_line in ${(f)history_lines}; do
-        if ! __tab_start_parse_history_entry "$history_line"; then
-          continue
-        fi
-        history_command="$REPLY"
-        if [[ -n ${seen_history_entries[$history_command]+x} ]]; then
-          continue
-        fi
-        seen_history_entries[$history_command]=1
-        __tab_start_add_row "history" "$history_command" "$history_command"
+    if __tab_start_collect_history_entries; then
+      for history_command in "${TAB_START_HISTORY_ENTRIES[@]}"; do
+        __tab_start_group_display "history" "$history_command"
+        history_values+=("$history_command")
+        history_displays+=("$REPLY")
       done
     fi
   fi
 
-  if (( row_id == 0 )); then
-    __tab_start_dispatch_fallback
-    return
+  if ! __tab_start_is_enabled "$TAB_START_ESCAPE_PATHS"; then
+    path_quote_options=(-Q)
   fi
 
-  __tab_start_resolve_header
-  header_text="$REPLY"
-
-  selection="$(
-    print -r -- "$rows" | fzf \
-      --ansi \
-      --prompt="$TAB_START_PROMPT" \
-      --delimiter=$'\t' \
-      --with-nth=1,2 \
-      --nth=1,2 \
-      --tiebreak=chunk,begin \
-      --accept-nth=1,3 \
-      --header-lines=1 \
-      --header="$header_text"
-  )"
-
-  if [[ -z "$selection" ]]; then
-    zle redisplay
-    return
+  if (( ${#command_values[@]} )); then
+    if compadd -V tab-start-command -X command -d command_displays -Q -- "${command_values[@]}"; then
+      result=0
+    fi
+  fi
+  if (( ${#alias_values[@]} )); then
+    if compadd -V tab-start-alias -X alias -d alias_displays -Q -- "${alias_values[@]}"; then
+      result=0
+    fi
+  fi
+  if (( ${#directory_values[@]} )); then
+    if compadd -V tab-start-dir -X dir -d directory_displays "${path_quote_options[@]}" -S / -q -- "${directory_values[@]}"; then
+      result=0
+    fi
+  fi
+  if (( ${#script_values[@]} )); then
+    if compadd -V tab-start-script -X script -d script_displays "${path_quote_options[@]}" -S '' -- "${script_values[@]}"; then
+      result=0
+    fi
+  fi
+  if (( ${#history_values[@]} )); then
+    if compadd -V tab-start-history -X history -d history_displays -Q -S '' -- "${history_values[@]}"; then
+      result=0
+    fi
   fi
 
-  picked_kind="${selection%%$'\t'*}"
-  picked_id="${selection#*$'\t'}"
-  if [[ -z "$picked_kind" || -z "$picked_id" ]] || (( ! ${+insert_by_id[$picked_id]} )); then
-    zle redisplay
-    return
+  if (( result )); then
+    curcontext="$original_curcontext"
+    __tab_start_complete_previous_command
+    return $?
   fi
-  if [[ "${types_by_id[$picked_id]}" != "$picked_kind" ]]; then
-    zle redisplay
-    return
-  fi
-
-  payload="${insert_by_id[$picked_id]}"
-  if [[ "$picked_kind" == "dir" ]] && [[ "$payload" != */ ]]; then
-    payload+="/"
-  fi
-  if [[ "$picked_kind" == "script" || "$picked_kind" == "dir" ]] && __tab_start_is_enabled "$TAB_START_ESCAPE_PATHS"; then
-    LBUFFER+="${(q)payload}"
-  else
-    LBUFFER+="$payload"
-  fi
-  zle redisplay
+  return 0
 }
 
-zle -N _tab_start_insert
-if [[ -n "$TAB_START_BINDKEY" && "$TAB_START_BINDKEY" != "none" ]]; then
-  __tab_start_bound_widget_for_key "$TAB_START_BINDKEY"
-  if [[ -n "$REPLY" ]]; then
-    TAB_START_FALLBACK_WIDGET="$REPLY"
+if (( ! $+functions[compdef] )); then
+  print -u2 -- "tab-start: Zsh completion system unavailable; load after compinit"
+else
+  if [[ "${_comps[-command-]-}" != "_tab_start_complete" ]]; then
+    TAB_START_ORIGINAL_COMMAND_COMPLETER="${_comps[-command-]:-_autocd}"
   fi
-  bindkey "$TAB_START_BINDKEY" _tab_start_insert
+  compdef _tab_start_complete -command-
+
+  # Without this scoped style, Zsh inserts a literal tab on an empty command line.
+  zstyle ':completion:::::' insert-tab false
+  # Preserve source order and newest-first history inside tab-start only.
+  zstyle ':completion:complete:-command-:tab-start' sort false
 fi

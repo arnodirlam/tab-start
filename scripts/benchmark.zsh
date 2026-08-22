@@ -1,7 +1,15 @@
 #!/usr/bin/env zsh
 
-set -euo pipefail
+set -eo pipefail
 zmodload zsh/datetime
+
+# Interactive startup supplies commands, aliases, and history; hooks only add noise here.
+precmd_functions=()
+preexec_functions=()
+chpwd_functions=()
+periodic_functions=()
+unfunction TRAPDEBUG TRAPZERR 2>/dev/null || true
+trap - DEBUG ZERR
 
 script_dir="${0:A:h}"
 repo_root="${script_dir}/.."
@@ -35,18 +43,21 @@ fi
 benchmark_dir="${benchmark_dir:A}"
 directory_history_file=""
 
-zle() { return 0; }
-bindkey() { return 0; }
-
-fzf() {
-  awk '
-    NR == 2 { split($0, a, "\t"); selection = a[1] "\t" a[3] }
-    END { if (selection != "") print selection }
-  '
-}
-
-commands[fzf]="/tmp/fzf"
 source "$repo_root/tab-start.plugin.zsh"
+
+typeset -gi benchmark_candidate_count=0
+compadd() {
+  while (( $# )); do
+    if [[ "$1" == "--" ]]; then
+      shift
+      (( benchmark_candidate_count += $# ))
+      return 0
+    fi
+    shift
+  done
+  return 1
+}
+TAB_START_ORIGINAL_COMMAND_COMPLETER=:
 
 cd "$benchmark_dir"
 
@@ -69,17 +80,17 @@ load_directory_history() {
 }
 
 count_history_entries() {
-  local history_line history_command history_lines
+  local history_event history_command
   local -A seen_history_entries
   local -i history_total=0
   local -i history_unique=0
 
-  if history_lines="$(fc -rl 1 2>/dev/null)"; then
-    for history_line in ${(f)history_lines}; do
-      if ! __tab_start_parse_history_entry "$history_line"; then
+  if (( ${+history} )); then
+    for history_event in ${(Onk)history}; do
+      history_command="${history[$history_event]}"
+      if [[ -z "$history_command" ]] || ! __tab_start_candidate_is_supported "$history_command"; then
         continue
       fi
-      history_command="$REPLY"
       (( history_total += 1 ))
       if [[ -n ${seen_history_entries[$history_command]+x} ]]; then
         continue
@@ -121,24 +132,26 @@ count_total_files_within_depth() {
   REPLY="${#unique_files[@]}"
 }
 
-typeset -i commands_count aliases_count dirs_count files_count total_files_count history_total_count history_unique_count files_max_depth
-typeset -a directory_entries file_entries
+typeset -i benchmark_commands_count benchmark_aliases_count benchmark_dirs_count
+typeset -i benchmark_files_count benchmark_total_files_count benchmark_history_total_count
+typeset -i benchmark_history_unique_count benchmark_files_max_depth
+typeset -a benchmark_directory_entries benchmark_file_entries
 load_directory_history
-commands_count=${#${(k)commands}}
-aliases_count=${#${(k)aliases}}
-directory_entries=(*(N-/))
+benchmark_commands_count=${#${(k)commands}}
+benchmark_aliases_count=${#${(k)aliases}}
+benchmark_directory_entries=(*(N-/))
 __tab_start_resolve_files_max_depth
-files_max_depth="$REPLY"
-TAB_START_FILES_MAX_DEPTH="$files_max_depth"
-__tab_start_collect_executable_files "$files_max_depth"
-file_entries=("${TAB_START_EXECUTABLE_FILES[@]}")
-count_total_files_within_depth "$files_max_depth"
-total_files_count="$REPLY"
-dirs_count=${#directory_entries[@]}
-files_count=${#file_entries[@]}
+benchmark_files_max_depth="$REPLY"
+TAB_START_FILES_MAX_DEPTH="$benchmark_files_max_depth"
+__tab_start_collect_executable_files "$benchmark_files_max_depth"
+benchmark_file_entries=("${TAB_START_EXECUTABLE_FILES[@]}")
+count_total_files_within_depth "$benchmark_files_max_depth"
+benchmark_total_files_count="$REPLY"
+benchmark_dirs_count=${#benchmark_directory_entries[@]}
+benchmark_files_count=${#benchmark_file_entries[@]}
 count_history_entries
-history_total_count="$REPLY"
-history_unique_count="$HISTORY_UNIQUE_COUNT"
+benchmark_history_total_count="$REPLY"
+benchmark_history_unique_count="$HISTORY_UNIQUE_COUNT"
 
 print_benchmark_case() {
   local label="$1"
@@ -159,10 +172,12 @@ print_benchmark_case() {
 
   samples=()
   for (( i = 1; i <= runs; i += 1 )); do
+    CURRENT=1
     BUFFER=""
-    LBUFFER=""
+    curcontext=':complete:-command-:'
+    benchmark_candidate_count=0
     start=$EPOCHREALTIME
-    _tab_start_insert
+    _tab_start_complete
     end=$EPOCHREALTIME
     elapsed=$(( (end - start) * 1000.0 ))
     samples+=("$elapsed")
@@ -181,7 +196,7 @@ print_benchmark_case() {
   printf '%.0f ms\t%s\n' "$p95" "$label"
 }
 
-print -r -- "$(date +%F), zsh ${ZSH_VERSION}, $(uname -s) $(uname -r), ${commands_count} commands, ${aliases_count} aliases, ${dirs_count} dirs, ${total_files_count} files (${files_count} executable, depth ${files_max_depth}), ${history_total_count} history entries (${history_unique_count} unique), ${runs} runs, 95th percentile"
+print -r -- "$(date +%F), zsh ${ZSH_VERSION}, $(uname -s) $(uname -r), ${benchmark_commands_count} commands, ${benchmark_aliases_count} aliases, ${benchmark_dirs_count} dirs, ${benchmark_total_files_count} files (${benchmark_files_count} executable, depth ${benchmark_files_max_depth}), ${benchmark_history_total_count} history entries (${benchmark_history_unique_count} unique), ${runs} runs, 95th percentile, candidate generation only"
 print_benchmark_case "commands + aliases + dirs + executable files + history" 1 1 1 1
 print_benchmark_case "commands + aliases + dirs + executable files" 1 1 1 0
 print_benchmark_case "aliases + dirs + executable files" 0 1 1 0
