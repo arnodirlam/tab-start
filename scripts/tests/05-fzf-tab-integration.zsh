@@ -58,9 +58,11 @@ zstyle ':completion:*' menu no
 zstyle ':fzf-tab:*' default-color '<LC><C0><RC>'
 zstyle ':fzf-tab:*' single-group color header
 zstyle ':fzf-tab:*' group-colors '<LC><C1><RC>' '<LC><C2><RC>' '<LC><C3><RC>' '<LC><C4><RC>'
+zstyle ':fzf-tab:complete:-command-:tab-start' fzf-flags --preview-window=border-sharp
 
 _tab_start_test_select() {
   print -r -u2 -- \"<MESSAGE>groups=\${(j:,:)_ftb_groups}</MESSAGE>\"
+  print -r -u2 -- \"<MESSAGE>flags=\$*</MESSAGE>\"
   ${(q)fzf_tab_dir}/test/select -n \"\$TAB_START_TEST_PICK\" -h \"\$#_ftb_headers\" -q \"\$_ftb_query\"
 }
 zstyle ':fzf-tab:*' debug-command _tab_start_test_select
@@ -90,6 +92,7 @@ run_case() {
   output="$(comptest $'\t')"
   [[ "$output" == *"line: {${expected_line}}{}"* ]]
   [[ "$output" == *'MESSAGE:{groups=alias,dir,script,history}'* ]]
+  [[ "$output" == *'MESSAGE:{flags=--preview-window=border-sharp --no-hscroll}'* ]]
   [[ "$output" == *'C2:{·dir  dir with space/}'* ]]
   [[ "$output" == *'C2:{·dir  linked dir/ -> dir with space}'* ]]
   [[ "$output" == *'C3:{·script  script file}'* ]]

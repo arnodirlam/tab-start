@@ -17,16 +17,31 @@ _tab_start_test_previous() {
 }
 
 compdef _tab_start_test_previous -command-
+zstyle ':fzf-tab:*' fzf-flags --color=fg:1
 source ./tab-start.plugin.zsh
 
 [[ "${_comps[-command-]}" == "_tab_start_complete" ]]
 [[ "$TAB_START_ORIGINAL_COMMAND_COMPLETER" == "_tab_start_test_previous" ]]
 
 typeset insert_tab_value sort_value
+typeset -a fzf_flags
 zstyle -s ':completion:::::' insert-tab insert_tab_value
 zstyle -s ':completion:complete:-command-:tab-start' sort sort_value
+__tab_start_apply_fzf_defaults
+zstyle -a ':fzf-tab:complete:-command-:tab-start' fzf-flags fzf_flags
 [[ "$insert_tab_value" == "false" ]]
 [[ "$sort_value" == "false" ]]
+[[ "${(j: :)fzf_flags}" == "--color=fg:1 --no-hscroll" ]]
+
+zstyle ':fzf-tab:complete:-command-:tab-start' fzf-flags --color=fg:2 --hscroll
+__tab_start_apply_fzf_defaults
+zstyle -a ':fzf-tab:complete:-command-:tab-start' fzf-flags fzf_flags
+[[ "${(j: :)fzf_flags}" == "--color=fg:2 --hscroll" ]]
+
+zstyle ':fzf-tab:complete:-command-:tab-start' fzf-flags --color=fg:3 --no-hscroll
+__tab_start_apply_fzf_defaults
+zstyle -a ':fzf-tab:complete:-command-:tab-start' fzf-flags fzf_flags
+[[ "${(j: :)fzf_flags}" == "--color=fg:3 --no-hscroll" ]]
 
 CURRENT=1
 BUFFER="echo value"

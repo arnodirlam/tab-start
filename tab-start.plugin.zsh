@@ -26,6 +26,19 @@ __tab_start_is_enabled() {
   [[ "${1:-1}" != "0" ]]
 }
 
+__tab_start_apply_fzf_defaults() {
+  local context=':fzf-tab:complete:-command-:tab-start'
+  local -a fzf_flags
+
+  # Resolve flags at completion time so styles configured after plugin loading are preserved
+  zstyle -a "$context" fzf-flags fzf_flags || fzf_flags=()
+
+  # Truncate entries at the line end by default
+  if (( ! ${fzf_flags[(Ie)--hscroll]} && ! ${fzf_flags[(Ie)--no-hscroll]} )); then
+    zstyle "$context" fzf-flags "${fzf_flags[@]}" --no-hscroll
+  fi
+}
+
 __tab_start_sanitize_display() {
   REPLY="$1"
   REPLY="${REPLY//\\/\\\\}"
@@ -152,6 +165,8 @@ _tab_start_complete() {
     __tab_start_complete_previous_command
     return $?
   fi
+
+  __tab_start_apply_fzf_defaults
 
   local original_curcontext="${curcontext:-}"
   local curcontext="${original_curcontext%:*}:tab-start"
