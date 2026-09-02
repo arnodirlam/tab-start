@@ -126,14 +126,6 @@ zstyle ':fzf-tab:*' switch-group F1 F2
 | executable files | 7 executable / 360 scanned (depth 2) | 7 |
 | history | 676 unique / 2363 total | 88 |
 
-```mermaid
-xychart-beta
-  title "Candidate generation cost by category"
-  x-axis ["commands", "aliases", "directories", "executable files", "history"]
-  y-axis "95th percentile (ms)" 0 --> 187
-  bar [170, 31, 1, 7, 88]
-```
-
 _zsh 5.9, Apple M1 Pro, 10 logical CPUs, 32 GiB RAM, 30 runs, 95th percentile, candidate generation only_
 <!-- benchmark:end -->
 
