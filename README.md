@@ -117,25 +117,35 @@ zstyle ':fzf-tab:*' switch-group F1 F2
 
 ## Benchmarks
 
-Benchmarks are local to current interactive shell environment and measure tab-start candidate preparation only. Native `compadd`, fzf-tab capture/rendering, and interactive selection are excluded.
-
 <!-- benchmark:start -->
-```text
-2026-08-21, zsh 5.9, Darwin 25.5.0, 2474 commands, 576 aliases, 12 dirs, 359 files (7 executable, depth 2), 2311 history entries (670 unique), 30 runs, 95th percentile, candidate generation only
-346 ms	commands + aliases + dirs + executable files + history
-172 ms	commands + aliases + dirs + executable files
-34 ms	aliases + dirs + executable files
-5 ms	dirs + executable files
+| Category | Baseline entries | Cost (ms, p95) |
+| --- | --- | ---: |
+| commands | 2426 | 170 |
+| aliases | 599 | 31 |
+| directories | 12 | 1 |
+| executable files | 7 executable / 360 scanned (depth 2) | 7 |
+| history | 676 unique / 2363 total | 88 |
+
+```mermaid
+xychart-beta
+  title "Candidate generation cost by category"
+  x-axis ["commands", "aliases", "directories", "executable files", "history"]
+  y-axis "95th percentile (ms)" 0 --> 187
+  bar [170, 31, 1, 7, 88]
 ```
+
+_zsh 5.9, Apple M1 Pro, 10 logical CPUs, 32 GiB RAM, 30 runs, 95th percentile, candidate generation only_
 <!-- benchmark:end -->
+
+Benchmarks are local to current interactive shell environment. Each row enables only its named category and measures tab-start candidate preparation. Native `compadd`, fzf-tab capture/rendering, and interactive selection are excluded.
 
 ## Development
 
 This repo includes a [Justfile](./Justfile) and pinned tools in [`.tool-versions`](./.tool-versions). Zsh remains a system dependency locally and is installed explicitly in CI.
 
 - `just check`: runs syntax, provider, and real fzf-tab capture/apply integration checks.
-- `just benchmark [dir] [runs]`: benchmarks candidate generation in `dir` (defaults: `.` and `30`).
-- `just update-readme-benchmark [dir] [runs]`: refreshes benchmark block.
+- `just benchmark [dir] [runs]`: benchmarks candidate generation in `dir` (defaults: `$BENCHMARK_DIR` or `.`, and `30`).
+- `just update-readme-benchmark [dir] [runs]`: refreshes benchmark block with same defaults.
 
 Set `FZF_TAB_TEST_DIR=/path/to/fzf-tab` when integration test cannot find standard Oh My Zsh installation.
 

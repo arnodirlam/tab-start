@@ -13,7 +13,7 @@ trap - DEBUG ZERR
 
 script_dir="${0:A:h}"
 repo_root="${script_dir}/.."
-benchmark_dir="$repo_root"
+benchmark_dir="${BENCHMARK_DIR:-$repo_root}"
 
 typeset -i runs=30
 if [[ $# -gt 0 ]]; then
@@ -132,6 +132,34 @@ count_total_files_within_depth() {
   REPLY="${#unique_files[@]}"
 }
 
+benchmark_hardware_details() {
+  local cpu_model=""
+  local cpu_count=""
+  local memory_bytes=""
+  local -a details
+
+  case "$(uname -s)" in
+    Darwin)
+      cpu_model="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
+      cpu_count="$(sysctl -n hw.logicalcpu 2>/dev/null || true)"
+      memory_bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
+      ;;
+    Linux)
+      cpu_model="$(awk -F ': ' '/^model name/ { print $2; exit }' /proc/cpuinfo 2>/dev/null || true)"
+      cpu_count="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+      memory_bytes="$(awk '/^MemTotal:/ { print $2 * 1024; exit }' /proc/meminfo 2>/dev/null || true)"
+      ;;
+  esac
+
+  [[ -n "$cpu_model" ]] && details+=("$cpu_model")
+  [[ "$cpu_count" == <-> ]] && details+=("${cpu_count} logical CPUs")
+  if [[ "$memory_bytes" == <-> ]]; then
+    details+=("$(( (memory_bytes + 536870912) / 1073741824 )) GiB RAM")
+  fi
+
+  REPLY="${(j:, :)details}"
+}
+
 typeset -i benchmark_commands_count benchmark_aliases_count benchmark_dirs_count
 typeset -i benchmark_files_count benchmark_total_files_count benchmark_history_total_count
 typeset -i benchmark_history_unique_count benchmark_files_max_depth
@@ -155,10 +183,12 @@ benchmark_history_unique_count="$HISTORY_UNIQUE_COUNT"
 
 print_benchmark_case() {
   local label="$1"
-  local include_commands="$2"
-  local include_aliases="$3"
-  local include_directories="$4"
-  local include_history="$5"
+  local baseline="$2"
+  local include_commands="$3"
+  local include_aliases="$4"
+  local include_directories="$5"
+  local files_max_depth="$6"
+  local include_history="$7"
   local -a samples
   local -a sorted
   local start end elapsed p95
@@ -168,6 +198,7 @@ print_benchmark_case() {
   TAB_START_INCLUDE_COMMANDS="$include_commands"
   TAB_START_INCLUDE_ALIASES="$include_aliases"
   TAB_START_INCLUDE_DIRECTORIES="$include_directories"
+  TAB_START_FILES_MAX_DEPTH="$files_max_depth"
   TAB_START_INCLUDE_HISTORY="$include_history"
 
   samples=()
@@ -193,11 +224,17 @@ print_benchmark_case() {
   fi
   p95="${sorted[$p95_index]}"
 
-  printf '%.0f ms\t%s\n' "$p95" "$label"
+  printf '%.0f ms\t%s\t%s\n' "$p95" "$label" "$baseline"
 }
 
-print -r -- "$(date +%F), zsh ${ZSH_VERSION}, $(uname -s) $(uname -r), ${benchmark_commands_count} commands, ${benchmark_aliases_count} aliases, ${benchmark_dirs_count} dirs, ${benchmark_total_files_count} files (${benchmark_files_count} executable, depth ${benchmark_files_max_depth}), ${benchmark_history_total_count} history entries (${benchmark_history_unique_count} unique), ${runs} runs, 95th percentile, candidate generation only"
-print_benchmark_case "commands + aliases + dirs + executable files + history" 1 1 1 1
-print_benchmark_case "commands + aliases + dirs + executable files" 1 1 1 0
-print_benchmark_case "aliases + dirs + executable files" 0 1 1 0
-print_benchmark_case "dirs + executable files" 0 0 1 0
+benchmark_hardware_details
+benchmark_environment="zsh ${ZSH_VERSION}"
+if [[ -n "$REPLY" ]]; then
+  benchmark_environment+=", $REPLY"
+fi
+print -r -- "benchmark environment: ${benchmark_environment}, ${runs} runs, 95th percentile, candidate generation only"
+print_benchmark_case "commands" "$benchmark_commands_count" 1 0 0 0 0
+print_benchmark_case "aliases" "$benchmark_aliases_count" 0 1 0 0 0
+print_benchmark_case "directories" "$benchmark_dirs_count" 0 0 1 0 0
+print_benchmark_case "executable files" "${benchmark_files_count} executable / ${benchmark_total_files_count} scanned (depth ${benchmark_files_max_depth})" 0 0 0 "$benchmark_files_max_depth" 0
+print_benchmark_case "history" "${benchmark_history_unique_count} unique / ${benchmark_history_total_count} total" 0 0 0 0 1
