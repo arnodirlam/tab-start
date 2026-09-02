@@ -16,54 +16,44 @@ if [[ ! "$runs" == <-> || "$runs" -le 0 ]]; then
   exit 1
 fi
 
-tmp_output="$(mktemp)"
-tmp_filtered="$(mktemp)"
 tmp_block="$(mktemp)"
 tmp_readme="$(mktemp)"
 
 cleanup() {
-  rm -f "$tmp_output" "$tmp_filtered" "$tmp_block" "$tmp_readme"
+  rm -f "$tmp_block" "$tmp_readme"
 }
 trap cleanup EXIT
 
 cd "$repo_root"
-just benchmark "$benchmark_dir" "$runs" >"$tmp_output"
-
-# Keep only the benchmark header and timing rows in case interactive shell hooks print noise.
-awk '
-  BEGIN {
-    header_seen = 0
-    timing_rows = 0
+just benchmark "$benchmark_dir" "$runs" | awk '
+  match($0, /benchmark environment: /) {
+    footer = substr($0, RSTART + RLENGTH)
+    next
   }
 
-  {
-    if (!header_seen && match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}, /)) {
-      print substr($0, RSTART)
-      header_seen = 1
-      next
+  match($0, /[0-9]+ ms\t/) {
+    row = substr($0, RSTART)
+    if (split(row, fields, "\t") != 3) {
+      exit 3
     }
-
-    if (match($0, /[0-9]+ ms\t/)) {
-      print substr($0, RSTART)
-      timing_rows += 1
+    sub(/ ms$/, "", fields[1])
+    if (++rows == 1) {
+      print "| Category | Baseline entries | Cost (ms, p95) |"
+      print "| --- | --- | ---: |"
     }
+    printf "| %s | %s | %s |\n", fields[2], fields[3], fields[1]
   }
 
   END {
-    if (!header_seen || timing_rows == 0) {
+    if (!footer || !rows) {
       exit 3
     }
+    printf "\n_%s_\n", footer
   }
-' "$tmp_output" >"$tmp_filtered" || {
-  print -u2 -- "unable to parse benchmark output"
+' >"$tmp_block" || {
+  print -u2 -- "unable to generate benchmark block"
   exit 1
 }
-
-{
-  print -r -- '```text'
-  cat "$tmp_filtered"
-  print -r -- '```'
-} >"$tmp_block"
 
 awk -v block_file="$tmp_block" '
   BEGIN {
