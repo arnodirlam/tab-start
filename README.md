@@ -7,6 +7,7 @@ It helps you quickly insert:
 - aliases
 - directories in the current working directory
 - executable files under the current working directory (recursive, configurable depth)
+- Mix tasks and aliases when the current directory contains `mix.exs`
 - history entries
 
 Normal completion remains unchanged for non-empty prompts.
@@ -71,6 +72,7 @@ Insertion behavior:
 - `command` and `alias`: inserted with one trailing space.
 - `dir`: shell-escaped by default with trailing `/`.
 - `script`: shell-escaped by default without trailing space.
+- `mix`: full commands such as `mix deps.get`, inserted with one trailing space.
 - `history`: supported single-line entries are inserted exactly, without additional quoting or trailing space.
 
 Directory and script rows use their fzf-tab group color. Directory symlink arrows and targets use the same color as the rest of the row.
@@ -120,11 +122,11 @@ zstyle ':fzf-tab:*' switch-group F1 F2
 <!-- benchmark:start -->
 | Category | Baseline entries | Cost (ms, p95) |
 | --- | --- | ---: |
-| commands | 2426 | 170 |
-| aliases | 599 | 31 |
-| directories | 12 | 1 |
-| executable files | 7 executable / 360 scanned (depth 2) | 7 |
-| history | 676 unique / 2363 total | 88 |
+| commands + mix | 2541 | 819 |
+| aliases + mix | 613 | 650 |
+| directories + mix | 12 | 630 |
+| executable files + mix | 7 executable / 360 scanned (depth 2) | 612 |
+| history + mix | 686 unique / 2394 total | 678 |
 
 _zsh 5.9, Apple M1 Pro, 10 logical CPUs, 32 GiB RAM, 30 runs, 95th percentile, candidate generation only_
 <!-- benchmark:end -->

@@ -164,6 +164,7 @@ typeset -i benchmark_commands_count benchmark_aliases_count benchmark_dirs_count
 typeset -i benchmark_files_count benchmark_total_files_count benchmark_history_total_count
 typeset -i benchmark_history_unique_count benchmark_files_max_depth
 typeset -a benchmark_directory_entries benchmark_file_entries
+benchmark_mix_label=""
 load_directory_history
 benchmark_commands_count=${#${(k)commands}}
 benchmark_aliases_count=${#${(k)aliases}}
@@ -180,6 +181,9 @@ benchmark_files_count=${#benchmark_file_entries[@]}
 count_history_entries
 benchmark_history_total_count="$REPLY"
 benchmark_history_unique_count="$HISTORY_UNIQUE_COUNT"
+if [[ -f mix.exs ]]; then
+  benchmark_mix_label=" + mix"
+fi
 
 print_benchmark_case() {
   local label="$1"
@@ -224,7 +228,7 @@ print_benchmark_case() {
   fi
   p95="${sorted[$p95_index]}"
 
-  printf '%.0f ms\t%s\t%s\n' "$p95" "$label" "$baseline"
+  printf '%.0f ms\t%s%s\t%s\n' "$p95" "$label" "$benchmark_mix_label" "$baseline"
 }
 
 benchmark_hardware_details

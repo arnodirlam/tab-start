@@ -171,12 +171,14 @@ _tab_start_complete() {
   local original_curcontext="${curcontext:-}"
   local curcontext="${original_curcontext%:*}:tab-start"
   local alias_name alias_value cmd_name cmd_path cmd_detail dir_name file_name
-  local history_command entry_text
+  local history_command entry_text mix_help mix_line mix_command mix_description
   local -a command_values command_displays
   local -a alias_values alias_displays
   local -a directory_values directory_displays
   local -a script_values script_displays
+  local -a mix_values mix_displays
   local -a history_values history_displays
+  local -a match
   local -a TAB_START_HISTORY_ENTRIES
   local -a path_quote_options
   local -i files_max_depth=0
@@ -238,6 +240,24 @@ _tab_start_complete() {
     script_displays+=("$REPLY")
   done
 
+  if [[ -f mix.exs ]] && mix_help="$(command mix help 2>/dev/null)"; then
+    for mix_line in "${(@f)mix_help}"; do
+      if [[ ! "$mix_line" =~ '^(mix( [^[:space:]#]+)?) +# (.*)$' ]]; then
+        continue
+      fi
+      mix_command="${match[1]}"
+      mix_description="${match[3]}"
+      if ! __tab_start_candidate_is_supported "$mix_command"; then
+        continue
+      fi
+      __tab_start_name_entry "$mix_command" "$mix_description"
+      entry_text="$REPLY"
+      __tab_start_group_display "mix" "$entry_text"
+      mix_values+=("$mix_command")
+      mix_displays+=("$REPLY")
+    done
+  fi
+
   if __tab_start_is_enabled "$TAB_START_INCLUDE_HISTORY"; then
     if __tab_start_collect_history_entries; then
       for history_command in "${TAB_START_HISTORY_ENTRIES[@]}"; do
@@ -269,6 +289,11 @@ _tab_start_complete() {
   fi
   if (( ${#script_values[@]} )); then
     if compadd -V tab-start-script -X script -d script_displays "${path_quote_options[@]}" -S '' -- "${script_values[@]}"; then
+      result=0
+    fi
+  fi
+  if (( ${#mix_values[@]} )); then
+    if compadd -V tab-start-mix -X mix -d mix_displays -Q -- "${mix_values[@]}"; then
       result=0
     fi
   fi

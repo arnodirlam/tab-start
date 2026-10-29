@@ -221,3 +221,32 @@ _tab_start_complete
 [[ "${(j: :)captured_groups}" == "dir script" ]]
 [[ "${captured_has_raw[dir]}" == "1" ]]
 [[ "${captured_has_raw[script]}" == "1" ]]
+
+mkdir -p "$test_root/bin"
+print -rl -- \
+  '#!/usr/bin/env zsh' \
+  '[[ "$1" == help ]] || exit 1' \
+  'print -r -- "mix                   # Runs the default task"' \
+  'print -r -- "mix deps.get          # Fetches dependencies"' \
+  'print -r -- "unexpected output"' \
+  'print -r -- "mix malformed output"' > "$test_root/bin/mix"
+chmod +x "$test_root/bin/mix"
+path=("$test_root/bin" $path)
+rehash
+touch mix.exs
+reset_captures
+_tab_start_complete
+
+[[ "${(j: :)captured_groups}" == "dir script mix" ]]
+[[ "${captured_group_names[mix]}" == "tab-start-mix" ]]
+[[ "${captured_candidate_counts[mix]}" == "2" ]]
+captured_index_of mix 'mix deps.get'
+mix_index="$REPLY"
+[[ "${captured_displays[mix:${mix_index}]}" == "mix  mix deps.get -> Fetches dependencies" ]]
+[[ "${captured_has_raw[mix]}" == "1" ]]
+[[ "${captured_suffix[mix]}" == "unset" ]]
+
+command rm -f mix.exs
+reset_captures
+_tab_start_complete
+[[ "${(j: :)captured_groups}" == "dir script" ]]
