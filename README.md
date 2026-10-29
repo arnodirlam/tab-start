@@ -108,6 +108,99 @@ zstyle ':completion:*:descriptions' format '[%d]'
 zstyle ':fzf-tab:*' switch-group F1 F2
 ```
 
+### Previews
+
+tab-start uses one fzf-tab context for all groups. A preview dispatcher can normalize the selected row and provide group- or command-specific previews. This example handles Mix tasks, shows man pages for commands and alias targets, reproduces fzf's `_fzf_comprun` path previews, and applies matching behavior to history entries:
+
+```zsh
+zstyle ':fzf-tab:complete:-command-:tab-start' fzf-preview '
+  typeset -a tab_start_preview_words=()
+  typeset tab_start_preview_alias="" tab_start_preview_command="" tab_start_preview_mode=""
+  typeset tab_start_preview_target=""
+
+  _tab_start_preview_run() {
+    local output
+    output="$("$@" </dev/null 2>&1)" && [[ -n "$output" ]] || return 1
+    print -r -- "$output"
+  }
+
+  case "$group" in
+    command)
+      tab_start_preview_mode=help
+      tab_start_preview_words=("$word")
+      ;;
+    alias)
+      tab_start_preview_mode=help
+      tab_start_preview_alias="${desc#"$word -> "}"
+      if [[ "$tab_start_preview_alias" == "$desc" ]]; then
+        tab_start_preview_words=("$word")
+      else
+        tab_start_preview_words=("${(@Q)${(z)tab_start_preview_alias}}")
+      fi
+      ;;
+    mix|history)
+      tab_start_preview_mode=command
+      tab_start_preview_words=("${(@Q)${(z)word}}")
+      tab_start_preview_command="${tab_start_preview_words[1]:-}"
+      if (( ${#tab_start_preview_words[@]} > 1 )); then
+        tab_start_preview_target="${tab_start_preview_words[-1]}"
+      fi
+      ;;
+    dir)
+      tab_start_preview_mode=command
+      tab_start_preview_command=cd
+      tab_start_preview_target="$word"
+      ;;
+    *)
+      tab_start_preview_mode=path
+      tab_start_preview_target="$word"
+      ;;
+  esac
+
+  if [[ "$tab_start_preview_mode" == help ]]; then
+    tab_start_preview_command="${tab_start_preview_words[1]:-}"
+    if [[ -n "$tab_start_preview_command" ]] &&
+        whence -w -- "$tab_start_preview_command" >/dev/null 2>&1 &&
+        command man -w "$tab_start_preview_command" >/dev/null 2>&1; then
+      _tab_start_preview_run env \
+        MANWIDTH="${FZF_PREVIEW_COLUMNS:-80}" MANPAGER=cat PAGER=cat \
+        man "$tab_start_preview_command"
+    fi
+  else
+    case "$tab_start_preview_command" in
+      mix)
+        if [[ -n "${tab_start_preview_words[2]:-}" ]]; then
+          command mix help "${tab_start_preview_words[2]}" 2>/dev/null
+        fi
+        ;;
+      cd)
+        if [[ -n "$tab_start_preview_target" ]]; then
+          command tree -C -- "$tab_start_preview_target" 2>/dev/null | command head -200
+        fi
+        ;;
+      ssh)
+        if [[ -n "$tab_start_preview_target" ]]; then
+          command dig "$tab_start_preview_target" 2>/dev/null
+        fi
+        ;;
+      *)
+        [[ -n "$tab_start_preview_target" ]] ||
+          tab_start_preview_target="$tab_start_preview_command"
+        if [[ -n "$tab_start_preview_target" ]]; then
+          command bat --style=numbers --color=always --line-range :500 \
+            -- "$tab_start_preview_target" 2>/dev/null ||
+            command tree -C -- "$tab_start_preview_target" 2>/dev/null
+        fi
+        ;;
+    esac
+  fi
+'
+zstyle ':fzf-tab:complete:-command-:tab-start' \
+  fzf-flags --preview-window=wrap,wrap-word,border-sharp
+```
+
+Command and alias previews use man pages only; highlighted commands are not executed. Alias expansion comes from tab-start's displayed `name -> value` detail because fzf-tab preview processes do not inherit interactive aliases. For history rows, the dispatcher treats the first shell word as the command and the last as its preview target; Mix always uses the second word as its task. Missing `man`, `bat`, `tree`, or `dig` commands produce an empty preview for the affected entry without interrupting the picker. When `bat` is missing but `tree` is available, the path fallback uses `tree`. Picker flags apply to the whole tab-start context.
+
 ## Troubleshooting
 
 - `tab-start: Zsh completion system unavailable`: load the plugin after `compinit`.
@@ -120,11 +213,11 @@ zstyle ':fzf-tab:*' switch-group F1 F2
 <!-- benchmark:start -->
 | Category | Baseline entries | Cost (ms, p95) |
 | --- | --- | ---: |
-| commands | 2426 | 170 |
-| aliases | 599 | 31 |
+| commands | 2541 | 109 |
+| aliases | 613 | 22 |
 | directories | 12 | 1 |
-| executable files | 7 executable / 360 scanned (depth 2) | 7 |
-| history | 676 unique / 2363 total | 88 |
+| executable files | 7 executable / 360 scanned (depth 2) | 5 |
+| history | 686 unique / 2394 total | 62 |
 
 _zsh 5.9, Apple M1 Pro, 10 logical CPUs, 32 GiB RAM, 30 runs, 95th percentile, candidate generation only_
 <!-- benchmark:end -->

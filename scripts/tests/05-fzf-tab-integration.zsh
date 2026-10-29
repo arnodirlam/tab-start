@@ -32,6 +32,89 @@ touch "$test_root/script file"
 chmod +x "$test_root/script file"
 cd "$test_root"
 
+typeset -gr tab_start_test_preview_style='
+  typeset -a tab_start_preview_words=()
+  typeset tab_start_preview_alias="" tab_start_preview_command="" tab_start_preview_mode=""
+  typeset tab_start_preview_target=""
+
+  _tab_start_preview_run() {
+    local output
+    output="$("$@" </dev/null 2>&1)" && [[ -n "$output" ]] || return 1
+    print -r -- "$output"
+  }
+
+  case "$group" in
+    command)
+      tab_start_preview_mode=help
+      tab_start_preview_words=("$word")
+      ;;
+    alias)
+      tab_start_preview_mode=help
+      tab_start_preview_alias="${desc#"$word -> "}"
+      if [[ "$tab_start_preview_alias" == "$desc" ]]; then
+        tab_start_preview_words=("$word")
+      else
+        tab_start_preview_words=("${(@Q)${(z)tab_start_preview_alias}}")
+      fi
+      ;;
+    mix|history)
+      tab_start_preview_mode=command
+      tab_start_preview_words=("${(@Q)${(z)word}}")
+      tab_start_preview_command="${tab_start_preview_words[1]:-}"
+      if (( ${#tab_start_preview_words[@]} > 1 )); then
+        tab_start_preview_target="${tab_start_preview_words[-1]}"
+      fi
+      ;;
+    dir)
+      tab_start_preview_mode=command
+      tab_start_preview_command=cd
+      tab_start_preview_target="$word"
+      ;;
+    *)
+      tab_start_preview_mode=path
+      tab_start_preview_target="$word"
+      ;;
+  esac
+
+  if [[ "$tab_start_preview_mode" == help ]]; then
+    tab_start_preview_command="${tab_start_preview_words[1]:-}"
+    if [[ -n "$tab_start_preview_command" ]] &&
+        whence -w -- "$tab_start_preview_command" >/dev/null 2>&1 &&
+        command man -w "$tab_start_preview_command" >/dev/null 2>&1; then
+      _tab_start_preview_run env \
+        MANWIDTH="${FZF_PREVIEW_COLUMNS:-80}" MANPAGER=cat PAGER=cat \
+        man "$tab_start_preview_command"
+    fi
+  else
+    case "$tab_start_preview_command" in
+      mix)
+        if [[ -n "${tab_start_preview_words[2]:-}" ]]; then
+          command mix help "${tab_start_preview_words[2]}" 2>/dev/null
+        fi
+        ;;
+      cd)
+        if [[ -n "$tab_start_preview_target" ]]; then
+          command tree -C -- "$tab_start_preview_target" 2>/dev/null | command head -200
+        fi
+        ;;
+      ssh)
+        if [[ -n "$tab_start_preview_target" ]]; then
+          command dig "$tab_start_preview_target" 2>/dev/null
+        fi
+        ;;
+      *)
+        [[ -n "$tab_start_preview_target" ]] ||
+          tab_start_preview_target="$tab_start_preview_command"
+        if [[ -n "$tab_start_preview_target" ]]; then
+          command bat --style=numbers --color=always --line-range :500 \
+            -- "$tab_start_preview_target" 2>/dev/null ||
+            command tree -C -- "$tab_start_preview_target" 2>/dev/null
+        fi
+        ;;
+    esac
+  fi
+'
+
 typeset -gr ZTST_testdir="$fzf_tab_dir/test"
 source "$fzf_tab_dir/test/comptest"
 typeset -gi ZTST_verbose=0
@@ -58,17 +141,20 @@ zstyle ':completion:*' menu no
 zstyle ':fzf-tab:*' default-color '<LC><C0><RC>'
 zstyle ':fzf-tab:*' single-group color header
 zstyle ':fzf-tab:*' group-colors '<LC><C1><RC>' '<LC><C2><RC>' '<LC><C3><RC>' '<LC><C4><RC>'
-zstyle ':fzf-tab:complete:-command-:tab-start' fzf-flags --preview-window=border-sharp
+zstyle ':fzf-tab:complete:-command-:tab-start' fzf-preview ${(q)tab_start_test_preview_style}
+zstyle ':fzf-tab:complete:-command-:tab-start' fzf-flags --preview-window=wrap,wrap-word,border-sharp
 
 _tab_start_test_select() {
   print -r -u2 -- \"<MESSAGE>groups=\${(j:,:)_ftb_groups}</MESSAGE>\"
   print -r -u2 -- \"<MESSAGE>flags=\$*</MESSAGE>\"
+  print -r -u2 -- \"<MESSAGE>preview=\${fzf_preview:+yes}</MESSAGE>\"
   ${(q)fzf_tab_dir}/test/select -n \"\$TAB_START_TEST_PICK\" -h \"\$#_ftb_headers\" -q \"\$_ftb_query\"
 }
 zstyle ':fzf-tab:*' debug-command _tab_start_test_select
 
 _tab_start_test_complete_report() {
   local -A history=(
+    1 'mix app.tree'
     2 'echo newest \"two words\"'
   )
 
@@ -92,10 +178,11 @@ run_case() {
   output="$(comptest $'\t')"
   [[ "$output" == *"line: {${expected_line}}{}"* ]]
   [[ "$output" == *'MESSAGE:{groups=alias,dir,script,history}'* ]]
-  [[ "$output" == *'MESSAGE:{flags=--preview-window=border-sharp --no-hscroll}'* ]]
-  [[ "$output" == *'C2:{·dir  dir with space/}'* ]]
-  [[ "$output" == *'C2:{·dir  linked dir/ -> dir with space}'* ]]
-  [[ "$output" == *'C3:{·script  script file}'* ]]
+  [[ "$output" == *'MESSAGE:{flags=--preview-window=wrap,wrap-word,border-sharp --no-hscroll}'* ]]
+  [[ "$output" == *'MESSAGE:{preview=yes}'* ]]
+  [[ "$output" == *'C2:{·dir with space/}'* ]]
+  [[ "$output" == *'C2:{·linked dir/ -> dir with space}'* ]]
+  [[ "$output" == *'C3:{·script file}'* ]]
 }
 
 run_case 1 1 'tab-start-test-alias '
@@ -103,6 +190,7 @@ run_case 2 1 'dir\ with\ space/'
 run_case 3 1 'linked\ dir/'
 run_case 4 1 'script\ file'
 run_case 5 1 'echo newest "two words"'
+run_case 6 1 'mix app.tree'
 run_case 4 0 'script file'
 
 zpty -d zsh

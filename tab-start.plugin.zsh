@@ -57,15 +57,6 @@ __tab_start_name_entry() {
   fi
 }
 
-# Prefix descriptions so fzf-tab can distinguish identical text across groups.
-__tab_start_group_display() {
-  local group="$1"
-  local entry="$2"
-
-  __tab_start_sanitize_display "$entry"
-  REPLY="${group}  ${REPLY}"
-}
-
 __tab_start_path_display() {
   local path="$1"
   local suffix="$2"
@@ -191,7 +182,7 @@ _tab_start_complete() {
       cmd_detail="${cmd_path/#$HOME\//~\/}"
       __tab_start_name_entry "$cmd_name" "$cmd_detail"
       entry_text="$REPLY"
-      __tab_start_group_display "command" "$entry_text"
+      __tab_start_sanitize_display "$entry_text"
       command_values+=("$cmd_name")
       command_displays+=("$REPLY")
     done
@@ -205,7 +196,7 @@ _tab_start_complete() {
       alias_value="${aliases[$alias_name]}"
       __tab_start_name_entry "$alias_name" "$alias_value"
       entry_text="$REPLY"
-      __tab_start_group_display "alias" "$entry_text"
+      __tab_start_sanitize_display "$entry_text"
       alias_values+=("$alias_name")
       alias_displays+=("$REPLY")
     done
@@ -218,7 +209,7 @@ _tab_start_complete() {
       fi
       __tab_start_path_display "$dir_name" "/"
       entry_text="$REPLY"
-      __tab_start_group_display "dir" "$entry_text"
+      __tab_start_sanitize_display "$entry_text"
       directory_values+=("$dir_name")
       directory_displays+=("$REPLY")
     done
@@ -233,7 +224,7 @@ _tab_start_complete() {
     fi
     __tab_start_path_display "$file_name" ""
     entry_text="$REPLY"
-    __tab_start_group_display "script" "$entry_text"
+    __tab_start_sanitize_display "$entry_text"
     script_values+=("$file_name")
     script_displays+=("$REPLY")
   done
@@ -241,7 +232,7 @@ _tab_start_complete() {
   if __tab_start_is_enabled "$TAB_START_INCLUDE_HISTORY"; then
     if __tab_start_collect_history_entries; then
       for history_command in "${TAB_START_HISTORY_ENTRIES[@]}"; do
-        __tab_start_group_display "history" "$history_command"
+        __tab_start_sanitize_display "$history_command"
         history_values+=("$history_command")
         history_displays+=("$REPLY")
       done
